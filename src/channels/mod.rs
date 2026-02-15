@@ -22,8 +22,12 @@ use crate::config::Config;
 use crate::memory::{self, Memory};
 use crate::providers::{self, Provider};
 use anyhow::Result;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
+
+/// Maximum conversation turns (user+assistant pairs) kept per sender.
+const MAX_HISTORY_TURNS: usize = 10;
 
 /// Maximum characters per injected workspace file (matches `OpenClaw` default).
 const BOOTSTRAP_MAX_CHARS: usize = 20_000;
@@ -252,6 +256,33 @@ fn inject_workspace_file(prompt: &mut String, workspace_dir: &std::path::Path, f
             let _ = writeln!(prompt, "### {filename}\n\n[File not found: {filename}]\n");
         }
     }
+}
+
+/// Build a prompt that includes recent conversation history before the current message.
+///
+/// If there is prior history, formats it as labeled turns so the LLM sees the
+/// conversation flow. The current message is always last and unmarked so the
+/// model treats it as the active request.
+fn build_history_prompt(
+    turns: Option<&VecDeque<(String, String)>>,
+    current_message: &str,
+) -> String {
+    let turns = match turns {
+        Some(t) if !t.is_empty() => t,
+        _ => return current_message.to_string(),
+    };
+
+    let mut prompt = String::with_capacity(turns.iter().map(|(_, c)| c.len() + 16).sum::<usize>());
+    prompt.push_str("[conversation history]\n");
+    for (role, content) in turns {
+        prompt.push_str(role);
+        prompt.push_str(": ");
+        prompt.push_str(content);
+        prompt.push('\n');
+    }
+    prompt.push_str("[current message]\n");
+    prompt.push_str(current_message);
+    prompt
 }
 
 pub fn handle_command(command: super::ChannelCommands, config: &Config) -> Result<()> {
@@ -626,6 +657,9 @@ pub async fn start_channels(config: Config) -> Result<()> {
     }
     drop(tx); // Drop our copy so rx closes when all channels stop
 
+    // Per-sender conversation history: "channel:sender" → recent (role, content) pairs
+    let mut history: HashMap<String, VecDeque<(String, String)>> = HashMap::new();
+
     // Process incoming messages — call the LLM and reply
     while let Some(msg) = rx.recv().await {
         println!(
@@ -650,9 +684,13 @@ pub async fn start_channels(config: Config) -> Result<()> {
                 .await;
         }
 
+        // Build message with conversation history
+        let history_key = format!("{}:{}", msg.channel, msg.sender);
+        let enriched = build_history_prompt(history.get(&history_key), &msg.content);
+
         // Call the LLM with system prompt (identity + soul + tools)
         match provider
-            .chat_with_system(Some(&system_prompt), &msg.content, &model, temperature)
+            .chat_with_system(Some(&system_prompt), &enriched, &model, temperature)
             .await
         {
             Ok(response) => {
@@ -664,6 +702,16 @@ pub async fn start_channels(config: Config) -> Result<()> {
                         response.clone()
                     }
                 );
+
+                // Store turn in history
+                let turns = history.entry(history_key).or_default();
+                turns.push_back(("user".into(), msg.content.clone()));
+                turns.push_back(("assistant".into(), response.clone()));
+                // Cap at MAX_HISTORY_TURNS pairs (2 entries per turn)
+                while turns.len() > MAX_HISTORY_TURNS * 2 {
+                    turns.pop_front();
+                }
+
                 // Find the channel that sent this message and reply
                 for ch in &channels {
                     if ch.name() == msg.channel {
@@ -994,5 +1042,32 @@ mod tests {
             .unwrap_or("")
             .contains("listen boom"));
         assert!(calls.load(Ordering::SeqCst) >= 1);
+    }
+
+    #[test]
+    fn history_prompt_no_turns() {
+        let result = build_history_prompt(None, "hello");
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn history_prompt_empty_turns() {
+        let empty: VecDeque<(String, String)> = VecDeque::new();
+        let result = build_history_prompt(Some(&empty), "hello");
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn history_prompt_with_turns() {
+        let mut turns = VecDeque::new();
+        turns.push_back(("user".into(), "hi".into()));
+        turns.push_back(("assistant".into(), "hello!".into()));
+        let result = build_history_prompt(Some(&turns), "how are you?");
+
+        assert!(result.contains("[conversation history]"));
+        assert!(result.contains("user: hi"));
+        assert!(result.contains("assistant: hello!"));
+        assert!(result.contains("[current message]"));
+        assert!(result.ends_with("how are you?"));
     }
 }
