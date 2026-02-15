@@ -26,6 +26,14 @@ pub struct IrcChannel {
 
 type WriteHalf = tokio::io::WriteHalf<tokio_rustls::client::TlsStream<tokio::net::TcpStream>>;
 
+/// Style instruction prepended to every IRC message before it reaches the LLM.
+/// IRC clients render plain text only — no markdown, no HTML, no XML.
+const IRC_STYLE_PREFIX: &str = "\
+[context: you are responding over IRC. \
+Plain text only. No markdown, no tables, no XML/HTML tags, no code fences. \
+Be terse and concise. \
+Use short lines. Avoid walls of text.]\n";
+
 /// A parsed IRC message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct IrcMessage {
@@ -489,7 +497,7 @@ impl Channel for IrcChannel {
                     let channel_msg = ChannelMessage {
                         id: format!("irc_{}", chrono::Utc::now().timestamp_millis()),
                         sender: reply_to,
-                        content: text.to_string(),
+                        content: format!("{IRC_STYLE_PREFIX}{text}"),
                         channel: "irc".to_string(),
                         timestamp: std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
