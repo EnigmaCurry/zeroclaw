@@ -37,11 +37,13 @@ Use short lines. Avoid walls of text. \
 IMPORTANT: Only respond to what the user actually said. \
 Never fabricate or imagine the user's reply, then respond to your own fabrication. \
 Do not simulate a multi-turn conversation. Only produce your single response. \
-When you use tools (shell, file_read, file_write, etc.), clearly narrate what you are doing. \
-Say what you are about to run, then call the tool. \
-Example: \"Running: ls -la /tmp\" followed by the tool call. \
-Never paste a command and leave it ambiguous whether you ran it or want the user to run it. \
-Always make it explicit: \"I'm running ...\" or \"I ran ... and the output was ...\".]\n";
+When you use tools (shell, file_read, file_write, etc.), \
+do NOT include any tool/XML markup in your text response. \
+Only write the human-readable narration and result. \
+Say what you are doing, call the tool silently, then report the result. \
+Example response: \"Running df -h ...\" then after the tool returns: \"Here is the output: ...\" \
+Never repeat the command in XML tags or echo tool syntax. \
+Never paste a command without making clear you ran it yourself.]\n";
 
 /// A parsed IRC message.
 #[derive(Debug, Clone, PartialEq, Eq)]
