@@ -30,9 +30,13 @@ type WriteHalf = tokio::io::WriteHalf<tokio_rustls::client::TlsStream<tokio::net
 /// IRC clients render plain text only — no markdown, no HTML, no XML.
 const IRC_STYLE_PREFIX: &str = "\
 [context: you are responding over IRC. \
-Plain text only. No markdown, no tables, no XML/HTML tags, no code fences. \
+Plain text only. No markdown, no tables, no XML/HTML tags. \
+Never use triple backtick code fences. Use a single blank line to separate blocks instead. \
 Be terse and concise. \
-Use short lines. Avoid walls of text.]\n";
+Use short lines. Avoid walls of text. \
+IMPORTANT: Only respond to what the user actually said. \
+Never fabricate or imagine the user's reply, then respond to your own fabrication. \
+Do not simulate a multi-turn conversation. Only produce your single response.]\n";
 
 /// A parsed IRC message.
 #[derive(Debug, Clone, PartialEq, Eq)]
