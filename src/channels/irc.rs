@@ -125,34 +125,53 @@ fn encode_sasl_plain(nick: &str, password: &str) -> String {
     out
 }
 
-/// Split a message into chunks that fit within IRC's line limit.
-/// IRC lines are max 512 bytes including `\r\n` and the `PRIVMSG target :` prefix.
-/// We use 400 bytes as a safe payload limit.
+/// Split a message into lines safe for IRC transmission.
+///
+/// IRC is a line-based protocol — `\r\n` terminates each command, so any
+/// newline inside a PRIVMSG payload would truncate the message and turn the
+/// remainder into garbled/invalid IRC commands.
+///
+/// This function:
+/// 1. Splits on `\n` (and strips `\r`) so each logical line becomes its own PRIVMSG.
+/// 2. Splits any line that exceeds `max_bytes` at a safe UTF-8 boundary.
+/// 3. Skips empty lines to avoid sending blank PRIVMSGs.
 fn split_message(message: &str, max_bytes: usize) -> Vec<String> {
-    if message.len() <= max_bytes {
-        return vec![message.to_string()];
+    let mut chunks = Vec::new();
+
+    for line in message.split('\n') {
+        let line = line.trim_end_matches('\r');
+        if line.is_empty() {
+            continue;
+        }
+
+        if line.len() <= max_bytes {
+            chunks.push(line.to_string());
+            continue;
+        }
+
+        // Line exceeds max_bytes — split at safe UTF-8 boundaries
+        let mut remaining = line;
+        while !remaining.is_empty() {
+            if remaining.len() <= max_bytes {
+                chunks.push(remaining.to_string());
+                break;
+            }
+
+            let mut split_at = max_bytes;
+            while split_at > 0 && !remaining.is_char_boundary(split_at) {
+                split_at -= 1;
+            }
+            if split_at == 0 {
+                split_at = max_bytes;
+            }
+
+            chunks.push(remaining[..split_at].to_string());
+            remaining = &remaining[split_at..];
+        }
     }
 
-    let mut chunks = Vec::new();
-    let mut remaining = message;
-
-    while !remaining.is_empty() {
-        if remaining.len() <= max_bytes {
-            chunks.push(remaining.to_string());
-            break;
-        }
-
-        // Find a safe split point (don't split mid-codepoint)
-        let mut split_at = max_bytes;
-        while split_at > 0 && !remaining.is_char_boundary(split_at) {
-            split_at -= 1;
-        }
-        if split_at == 0 {
-            split_at = max_bytes;
-        }
-
-        chunks.push(remaining[..split_at].to_string());
-        remaining = &remaining[split_at..];
+    if chunks.is_empty() {
+        chunks.push(String::new());
     }
 
     chunks
@@ -656,6 +675,48 @@ mod tests {
     #[test]
     fn split_empty_message() {
         let chunks = split_message("", 400);
+        assert_eq!(chunks, vec![""]);
+    }
+
+    #[test]
+    fn split_newlines_into_separate_lines() {
+        let chunks = split_message("line one\nline two\nline three", 400);
+        assert_eq!(chunks, vec!["line one", "line two", "line three"]);
+    }
+
+    #[test]
+    fn split_crlf_newlines() {
+        let chunks = split_message("hello\r\nworld", 400);
+        assert_eq!(chunks, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn split_skips_empty_lines() {
+        let chunks = split_message("hello\n\n\nworld", 400);
+        assert_eq!(chunks, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn split_trailing_newline() {
+        let chunks = split_message("hello\n", 400);
+        assert_eq!(chunks, vec!["hello"]);
+    }
+
+    #[test]
+    fn split_multiline_with_long_line() {
+        let long = "a".repeat(800);
+        let msg = format!("short\n{long}\nend");
+        let chunks = split_message(&msg, 400);
+        assert_eq!(chunks.len(), 4);
+        assert_eq!(chunks[0], "short");
+        assert_eq!(chunks[1].len(), 400);
+        assert_eq!(chunks[2].len(), 400);
+        assert_eq!(chunks[3], "end");
+    }
+
+    #[test]
+    fn split_only_newlines() {
+        let chunks = split_message("\n\n\n", 400);
         assert_eq!(chunks, vec![""]);
     }
 
