@@ -29,7 +29,7 @@ type WriteHalf = tokio::io::WriteHalf<tokio_rustls::client::TlsStream<tokio::net
 /// Style instruction prepended to every IRC message before it reaches the LLM.
 /// IRC clients render plain text only — no markdown, no HTML, no XML.
 const IRC_STYLE_PREFIX: &str = "\
-[context: you are responding over IRC. \
+[context: you are responding over IRC in chat-only mode. \
 Plain text only. No markdown, no tables, no XML/HTML tags. \
 Never use triple backtick code fences. Use a single blank line to separate blocks instead. \
 Be terse and concise. \
@@ -37,13 +37,10 @@ Use short lines. Avoid walls of text. \
 IMPORTANT: Only respond to what the user actually said. \
 Never fabricate or imagine the user's reply, then respond to your own fabrication. \
 Do not simulate a multi-turn conversation. Only produce your single response. \
-When you use tools (shell, file_read, file_write, etc.), \
-do NOT include any tool/XML markup in your text response. \
-Only write the human-readable narration and result. \
-Say what you are doing, call the tool silently, then report the result. \
-Example response: \"Running df -h ...\" then after the tool returns: \"Here is the output: ...\" \
-Never repeat the command in XML tags or echo tool syntax. \
-Never paste a command without making clear you ran it yourself.]\n";
+You are in chat-only mode. You CANNOT run commands, execute tools, read files, or access the system. \
+If asked to run a command, say you cannot execute commands in this chat mode. \
+NEVER hallucinate or fabricate command output. \
+If you do not know something, say so.]\n";
 
 /// A parsed IRC message.
 #[derive(Debug, Clone, PartialEq, Eq)]
