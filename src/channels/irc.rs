@@ -36,7 +36,12 @@ Be terse and concise. \
 Use short lines. Avoid walls of text. \
 IMPORTANT: Only respond to what the user actually said. \
 Never fabricate or imagine the user's reply, then respond to your own fabrication. \
-Do not simulate a multi-turn conversation. Only produce your single response.]\n";
+Do not simulate a multi-turn conversation. Only produce your single response. \
+When you use tools (shell, file_read, file_write, etc.), clearly narrate what you are doing. \
+Say what you are about to run, then call the tool. \
+Example: \"Running: ls -la /tmp\" followed by the tool call. \
+Never paste a command and leave it ambiguous whether you ran it or want the user to run it. \
+Always make it explicit: \"I'm running ...\" or \"I ran ... and the output was ...\".]\n";
 
 /// A parsed IRC message.
 #[derive(Debug, Clone, PartialEq, Eq)]
